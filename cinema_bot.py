@@ -1,4 +1,3 @@
-
 from flask import Flask
 import requests, os, json, datetime, time, threading
 
@@ -54,7 +53,7 @@ def handle_message(msg):
         users[str(uid)] = {"name": name, "joined": str(datetime.date.today())}
         save_data("users", users)
 
-    print(f"MSG {uid}: {text}")
+    print(f"MSG {uid}: {text}", flush=True)
 
     if text == "/start":
         kb = {"inline_keyboard": [
@@ -70,6 +69,7 @@ def handle_message(msg):
             save_data("admins", admins)
         if str(uid) in admins:
             movies = get_data("movies")
+            users2 = get_data("users")
             total_views = sum(m.get("views", 0) for m in movies.values())
             kb = {"inline_keyboard": [
                 [{"text": "➕ Film qo'shish", "callback_data": "add_movie"}],
@@ -77,10 +77,9 @@ def handle_message(msg):
                 [{"text": "🗑 Film o'chirish", "callback_data": "del_movie"}],
                 [{"text": "👥 Userlar", "callback_data": "users_list"}],
             ]}
-            send(cid, f"👨‍💼 <b>ADMIN PANEL</b>\n\n👥 Userlar: <b>{len(users)}</b>\n🎬 Filmlar: <b>{len(movies)}</b>\n▶️ Ko'rishlar: <b>{total_views}</b>", kb)
+            send(cid, f"👨‍💼 <b>ADMIN PANEL</b>\n\n👥 Userlar: <b>{len(users2)}</b>\n🎬 Filmlar: <b>{len(movies)}</b>\n▶️ Ko'rishlar: <b>{total_views}</b>", kb)
         else:
             send(cid, "❌ Siz admin emassiz!")
-
     else:
         movies = get_data("movies")
         found = [(mid, m) for mid, m in movies.items() if text.lower() in m.get("name","").lower() or text == mid]
@@ -91,15 +90,14 @@ def handle_message(msg):
                 save_data("movies", movies)
                 send(cid, f"🎬 <b>{m.get('name','')}</b>\n\n{m.get('description','')}\n\n▶️ Ko'rishlar: {m.get('views',0)}")
         else:
-            send(cid, f"❌ '<b>{text}</b>' topilmadi!\n\nBoshqa nom yozing.")
+            send(cid, f"❌ '<b>{text}</b>' topilmadi!")
 
 def handle_callback(cb):
     cid = cb["from"]["id"]
     uid = cb["from"]["id"]
     data = cb.get("data", "")
     cb_id = cb["id"]
-    name = cb["from"].get("first_name", "User")
-    print(f"CB {uid}: {data}")
+    print(f"CB {uid}: {data}", flush=True)
 
     if data == "search":
         send(cid, "🔍 Film nomini yozing:")
@@ -129,7 +127,9 @@ def handle_callback(cb):
 
 def polling():
     offset = 0
-    print("🚀 Bot polling boshlandi!")
+    print("🚀 Polling boshlandi!", flush=True)
+    # Eski webhookni o'chir
+    api("deleteWebhook", {"drop_pending_updates": True})
     while True:
         try:
             resp = api("getUpdates", {"offset": offset, "timeout": 30})
@@ -141,8 +141,13 @@ def polling():
                     if "callback_query" in upd:
                         handle_callback(upd["callback_query"])
         except Exception as e:
-            print(f"POLL ERROR: {e}")
+            print(f"POLL ERROR: {e}", flush=True)
             time.sleep(5)
+
+# ⚡ MODULE IMPORT BO'LGANDA START QILADI (gunicorn uchun)
+print("🤖 Bot module yuklandi, polling thread ishga tushmoqda...", flush=True)
+polling_thread = threading.Thread(target=polling, daemon=True)
+polling_thread.start()
 
 @app.route("/")
 def index():
@@ -153,7 +158,7 @@ def health():
     return "OK", 200
 
 if __name__ == "__main__":
-    threading.Thread(target=polling, daemon=True).start()
     port = int(os.environ.get("PORT", 10000))
-    print(f"🌐 Port {port}...")
+    print(f"🌐 Port {port}...", flush=True)
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
