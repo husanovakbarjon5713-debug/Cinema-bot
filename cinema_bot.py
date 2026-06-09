@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request
 import requests, os, json, datetime, time, threading
 
 app = Flask(__name__)
@@ -12,7 +12,7 @@ def api(method, data=None):
         r = requests.post(f"https://api.telegram.org/bot{TOKEN}/{method}", data=data or {}, timeout=15)
         return r.json()
     except Exception as e:
-        print(f"ERROR: {e}")
+        print(f"ERROR: {e}", flush=True)
         return {}
 
 def send(cid, text, markup=None):
@@ -40,7 +40,7 @@ def save_data(key, data):
         with open(f"{BASE_DIR}/{key}.json", 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"SAVE ERROR: {e}")
+        print(f"SAVE ERROR: {e}", flush=True)
 
 def handle_message(msg):
     cid = msg["chat"]["id"]
@@ -60,7 +60,7 @@ def handle_message(msg):
             [{"text": "🔍 Qidirish", "callback_data": "search"}],
             [{"text": "📊 Statistika", "callback_data": "stats"}],
         ]}
-        send(cid, f"🎬 <b>Xush kelibsiz, {name}!</b>\n\nFilm kodi yoki nom yozing:", kb)
+        send(cid, f"🎬 <b>Xush kelibsiz, {name}!</b>\n\nFilm kodi yoki nomini yozing:", kb)
 
     elif text == "/admin":
         admins = get_data("admins")
@@ -82,7 +82,8 @@ def handle_message(msg):
             send(cid, "❌ Siz admin emassiz!")
     else:
         movies = get_data("movies")
-        found = [(mid, m) for mid, m in movies.items() if text.lower() in m.get("name","").lower() or text == mid]
+        found = [(mid, m) for mid, m in movies.items() 
+                 if text.lower() in m.get("name","").lower() or text == mid]
         if found:
             for mid, m in found[:3]:
                 m["views"] = m.get("views", 0) + 1
@@ -125,29 +126,19 @@ def handle_callback(cb):
 
     answer_cb(cb_id)
 
-def polling():
-    offset = 0
-    print("🚀 Polling boshlandi!", flush=True)
-    # Eski webhookni o'chir
-    api("deleteWebhook", {"drop_pending_updates": True})
-    while True:
-        try:
-            resp = api("getUpdates", {"offset": offset, "timeout": 30})
-            if resp.get("ok"):
-                for upd in resp.get("result", []):
-                    offset = upd["update_id"] + 1
-                    if "message" in upd:
-                        handle_message(upd["message"])
-                    if "callback_query" in upd:
-                        handle_callback(upd["callback_query"])
-        except Exception as e:
-            print(f"POLL ERROR: {e}", flush=True)
-            time.sleep(5)
-
-# ⚡ MODULE IMPORT BO'LGANDA START QILADI (gunicorn uchun)
-print("🤖 Bot module yuklandi, polling thread ishga tushmoqda...", flush=True)
-polling_thread = threading.Thread(target=polling, daemon=True)
-polling_thread.start()
+# ==================== WEBHOOK ROUTES ====================
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    try:
+        upd = request.get_json()
+        print(f"UPDATE: {upd}", flush=True)
+        if "message" in upd:
+            handle_message(upd["message"])
+        if "callback_query" in upd:
+            handle_callback(upd["callback_query"])
+    except Exception as e:
+        print(f"WEBHOOK ERROR: {e}", flush=True)
+    return "OK", 200
 
 @app.route("/")
 def index():
@@ -157,8 +148,14 @@ def index():
 def health():
     return "OK", 200
 
+@app.route("/set_webhook")
+def set_webhook():
+    url = request.host_url + "webhook"
+    result = api("setWebhook", {"url": url})
+    return json.dumps(result)
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    print(f"🌐 Port {port}...", flush=True)
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
 
